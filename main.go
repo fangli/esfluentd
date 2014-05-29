@@ -21,15 +21,11 @@
 package main
 
 import (
-	"log"
-
 	"github.com/fangli/esfluentd/config"
 	"github.com/fangli/esfluentd/server"
 )
 
 func main() {
-	log.Println("ESFluentd started")
-
 	cfg := config.Parse()
 	s := server.Server{
 		Cfg: cfg,

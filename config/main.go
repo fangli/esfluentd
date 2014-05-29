@@ -134,6 +134,7 @@ func Parse() *Config {
 		coreNum = *corenum
 	}
 
+	log.Println("ESFluentd started")
 	log.Printf("Configuration: %+v", *cfg)
 	log.Println("CPU core number: " + strconv.Itoa(coreNum))
 	runtime.GOMAXPROCS(coreNum)
