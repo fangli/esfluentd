@@ -21,6 +21,7 @@
 package server
 
 import (
+	"io"
 	"log"
 	"net"
 	"regexp"
@@ -66,7 +67,9 @@ func (s *Server) clientHandler(conn net.Conn) {
 		var data [3]interface{}
 		err = decoder.Decode(&data)
 		if err != nil {
-			log.Println(err.Error())
+			if err != io.EOF {
+				log.Println(err.Error())
+			}
 			return
 		}
 
