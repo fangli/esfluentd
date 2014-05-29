@@ -91,7 +91,7 @@ func (s *Server) clientHandler(conn net.Conn) {
 
 func (s *Server) serveTcp() {
 	var err error
-	ln, err := net.Listen("tcp", s.Cfg.Listen)
+	ln, err := net.Listen("tcp4", s.Cfg.Listen)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
