@@ -21,8 +21,8 @@
 package main
 
 import (
-	"github.com/fangli/esfluentd/config"
-	"github.com/fangli/esfluentd/server"
+	"./config"
+	"./server"
 )
 
 func main() {
