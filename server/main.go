@@ -68,6 +68,7 @@ func (s *Server) doKinesisInsert(ksis *kinesis.Kinesis, cache map[int]interface{
 
 	var vTimestamp string
 	var vReceiveTime string
+	var vPartitionKey string
 	var size = 0
 	for _, metric := range cache {
 		data, err := json.Marshal(metric)
@@ -77,11 +78,33 @@ func (s *Server) doKinesisInsert(ksis *kinesis.Kinesis, cache map[int]interface{
 		size += len(data)
 
 		item, _ := metric.(map[string]interface{})
-		vPartitionKey := item["namespace"].(string)
-		timestamp := item["timestamp"]
-		vTimestamp = time.Unix(timestamp.(int64), 0).String()
-		receivetime := item["receivetime"]
-		vReceiveTime = time.Unix(receivetime.(int64), 0).String()
+		if val, ok := item["namespace"]; ok {
+			if val != nil {
+				vPartitionKey = val.(string)
+			} else {
+				return
+			}
+		} else {
+			return
+		}
+		if val, ok := item["timestamp"]; ok {
+			if val != nil {
+				vTimestamp = time.Unix(val.(int64), 0).String()
+			} else {
+				return
+			}
+		} else {
+			return
+		}
+		if val, ok := item["receivetime"]; ok {
+			if val != nil {
+				vReceiveTime = time.Unix(val.(int64), 0).String()
+			} else {
+				return
+			}
+		} else {
+			return
+		}
 
 		args.AddRecord(data, vPartitionKey)
 	}
@@ -121,8 +144,12 @@ func (s *Server) KinesisInsert() {
 				size += n
 
 				if size < 1024*50 {
-					cache[count] = metric
-					count += 1
+					if metric != nil {
+						cache[count] = metric
+						count += 1
+					} else {
+						continue
+					}
 				} else {
 					s.metricKinesisChn <- metric
 
