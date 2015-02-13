@@ -21,23 +21,27 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"log"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/fangli/esfluentd/config"
+	"../config"
 	"github.com/mattbaird/elastigo/api"
 	"github.com/mattbaird/elastigo/cluster"
 	"github.com/mattbaird/elastigo/core"
-	"github.com/vmihailenco/msgpack"
+	"github.com/sendgridlabs/go-kinesis"
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type Server struct {
-	Cfg       *config.Config
-	metricChn chan interface{}
+	Cfg              *config.Config
+	metricChn        chan interface{}
+	metricKinesisChn chan interface{}
 }
 
 func (s *Server) EsInsert() {
@@ -55,6 +59,117 @@ func (s *Server) EsInsert() {
 
 	for metric := range s.metricChn {
 		indexer.Index(s.Cfg.Indice(), s.Cfg.EsType, "", "", nil, &metric, false)
+	}
+}
+
+func (s *Server) doKinesisInsert(ksis *kinesis.Kinesis, cache map[int]interface{}) {
+	var args = kinesis.NewArgs()
+	args.Add("StreamName", s.Cfg.AWSKinesisStreamName)
+
+	var vTimestamp string
+	var vReceiveTime string
+	var vPartitionKey string
+	var size = 0
+	for _, metric := range cache {
+		data, err := json.Marshal(metric)
+		if err != nil {
+			log.Println("Error Marshal: " + err.Error())
+		}
+		size += len(data)
+
+		item, _ := metric.(map[string]interface{})
+		if val, ok := item["namespace"]; ok {
+			if val != nil {
+				vPartitionKey = val.(string)
+			} else {
+				return
+			}
+		} else {
+			return
+		}
+		if val, ok := item["timestamp"]; ok {
+			if val != nil {
+				vTimestamp = time.Unix(val.(int64), 0).String()
+			} else {
+				return
+			}
+		} else {
+			return
+		}
+		if val, ok := item["receivetime"]; ok {
+			if val != nil {
+				vReceiveTime = time.Unix(val.(int64), 0).String()
+			} else {
+				return
+			}
+		} else {
+			return
+		}
+
+		args.AddRecord(data, vPartitionKey)
+	}
+	now := time.Now().Unix()
+	vPutRecordTime := time.Unix(now, 0).String()
+
+	var err error
+	_, err = ksis.PutRecords(args)
+	if err != nil {
+		if err != io.EOF {
+			log.Println("PutRecord Error: " + err.Error() + "PutRecordSize: " + strconv.Itoa(size))
+		}
+		return
+	} else {
+		log.Println("PutRecordSize: " + strconv.Itoa(size) + ", ReceiveTime: " + vReceiveTime + ", PutRecordTime: " + vPutRecordTime + ", Timestamp: " + vTimestamp)
+	}
+}
+
+func (s *Server) KinesisInsert() {
+	auth := kinesis.Auth{AccessKey: s.Cfg.AWSKinesisAccessKey, SecretKey: s.Cfg.AWSKinesisSecretKey}
+	region := kinesis.Region{Name: s.Cfg.AWSKinesisRegion}
+	var ksis = kinesis.New(&auth, region)
+
+	var size = 0
+	var count = 0
+	var cache = make(map[int]interface{})
+	for {
+		select {
+		case metric, ok := <-s.metricKinesisChn:
+			if ok {
+				data, err := json.Marshal(metric)
+				if err != nil {
+					log.Println("Error Marshal: " + err.Error())
+				}
+
+				n := len(data)
+				size += n
+
+				if size < 1024*50 {
+					if metric != nil {
+						cache[count] = metric
+						count += 1
+					} else {
+						continue
+					}
+				} else {
+					s.metricKinesisChn <- metric
+
+					go s.doKinesisInsert(ksis, cache)
+					size = 0
+					count = 0
+					cache = make(map[int]interface{})
+				}
+			} else {
+				log.Println("Error kinesis channel closed!!!")
+			}
+		default:
+			if len(cache) != 0 {
+				go s.doKinesisInsert(ksis, cache)
+				size = 0
+				count = 0
+				cache = make(map[int]interface{})
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
 	}
 }
 
@@ -84,7 +199,25 @@ func (s *Server) clientHandler(conn net.Conn) {
 			body[s.Cfg.TimeField] = data[1].(int64) * 1000
 		}
 
+		name := data[0].(string)
+		content := make(map[string]interface{})
+		for k, v := range data[2].(map[interface{}]interface{}) {
+			content[k.(string)] = v
+		}
+		content["namespace"] = content["instanceid"]
+		delete(content, "instanceid")
+		content["timestamp"] = data[1].(int64)
+		value := content["_value"]
+		delete(content, "_value")
+		content["receivetime"] = time.Now().Unix()
+
+		metricKinesisJson := map[string]interface{}{"name": name, "value": value, "type": "number", "cycle": 30}
+		var rbody []map[string]interface{}
+		rbody = append(rbody, metricKinesisJson)
+		content["metrics"] = rbody
+
 		s.metricChn <- body
+		s.metricKinesisChn <- content
 
 	}
 }
@@ -136,7 +269,9 @@ func (s *Server) RefreshNodes() {
 
 func (s *Server) Forever() {
 	s.metricChn = make(chan interface{}, 500000)
+	s.metricKinesisChn = make(chan interface{}, 500000)
 	s.InitialNodes()
 	go s.EsInsert()
+	go s.KinesisInsert()
 	s.serveTcp()
 }

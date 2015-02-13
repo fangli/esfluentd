@@ -55,17 +55,21 @@ var (
 )
 
 type Config struct {
-	Listen        string
-	Expires       time.Duration
-	Nodes         []string
-	Port          string
-	IndicePattern string
-	EsType        string
-	TagField      string
-	TimeField     string
-	MaxDocs       int
-	AutoDisc      bool
-	SyncInterval  time.Duration
+	Listen               string
+	Expires              time.Duration
+	Nodes                []string
+	Port                 string
+	IndicePattern        string
+	EsType               string
+	TagField             string
+	TimeField            string
+	MaxDocs              int
+	AutoDisc             bool
+	SyncInterval         time.Duration
+	AWSKinesisAccessKey  string
+	AWSKinesisSecretKey  string
+	AWSKinesisRegion     string
+	AWSKinesisStreamName string
 }
 
 func (c *Config) Indice() string {
@@ -85,6 +89,10 @@ func Parse() *Config {
 	maxdocs := flag.Int("max-docs", 1000, "Max number of Docs to hold in buffer before forcing flush")
 	maxinterval := flag.String("max-interval", "1s", "Max delay before forcing a flush to Elasticearch")
 	corenum := flag.Int("core", 0, "How many CPU cores to use. 0 for auto")
+	awsKinesisAccessKey := flag.String("aws_kinesis_access_key", "", "The access key about AWS Kinesis API")
+	awsKinesisSecretKey := flag.String("aws_kinesis_security_key", "", "The Secret key about AWS Kinesis API")
+	awsKinesisRegion := flag.String("aws_kinesis_region", "ap-southeast-1", "The region about AWS Kinesis API")
+	awsKinesisStreamName := flag.String("aws_kinesis_stream_name", "monitorMetrics", "The Stream name about AWS Kinesis API")
 
 	version := flag.Bool("version", false, "Show version information")
 	v := flag.Bool("v", false, "Show version information")
@@ -110,17 +118,21 @@ func Parse() *Config {
 	}
 
 	cfg := &Config{
-		Listen:        *tcplisten,
-		Nodes:         strings.Split(*nodes, ","),
-		Port:          *port,
-		IndicePattern: *indicepattern,
-		EsType:        *estype,
-		TagField:      *tagfield,
-		TimeField:     *timefield,
-		Expires:       connDuration,
-		SyncInterval:  syncinterval,
-		MaxDocs:       *maxdocs,
-		AutoDisc:      *autodisc,
+		Listen:               *tcplisten,
+		Nodes:                strings.Split(*nodes, ","),
+		Port:                 *port,
+		IndicePattern:        *indicepattern,
+		EsType:               *estype,
+		TagField:             *tagfield,
+		TimeField:            *timefield,
+		Expires:              connDuration,
+		SyncInterval:         syncinterval,
+		MaxDocs:              *maxdocs,
+		AutoDisc:             *autodisc,
+		AWSKinesisAccessKey:  *awsKinesisAccessKey,
+		AWSKinesisSecretKey:  *awsKinesisSecretKey,
+		AWSKinesisRegion:     *awsKinesisRegion,
+		AWSKinesisStreamName: *awsKinesisStreamName,
 	}
 
 	var coreNum int
@@ -134,7 +146,7 @@ func Parse() *Config {
 		coreNum = *corenum
 	}
 
-	log.Println("ESFluentd started")
+	log.Println("KESFluentd started")
 	log.Printf("Configuration: %+v", *cfg)
 	log.Println("CPU core number: " + strconv.Itoa(coreNum))
 	runtime.GOMAXPROCS(coreNum)
