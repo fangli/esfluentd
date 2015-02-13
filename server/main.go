@@ -167,6 +167,7 @@ func (s *Server) KinesisInsert() {
 				size = 0
 				count = 0
 				cache = make(map[int]interface{})
+				time.Sleep(100 * time.Millisecond)
 			}
 		}
 	}
